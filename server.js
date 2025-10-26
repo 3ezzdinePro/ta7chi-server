@@ -15,7 +15,7 @@ const io = new Server(server, {
 });
 
 const SUITS = ['♠','♥','♦','♣'];
-const RANKS = ['A','2','3','4','5','6','7','8','9','10','J','Q','K'];
+const RANKS = ['A','J','Q','K'];
 
 function makeDeck() {
   const deck = [];
