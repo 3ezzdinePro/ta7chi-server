@@ -39,6 +39,27 @@ function createRoom(roomId, hostPlayer){ rooms[roomId] = { players: [hostPlayer]
 function dealCards(room){ const deck = shuffle(makeDeck()); const count = room.players.length; while(deck.length){ for(let i=0;i<count && deck.length;i++){ room.players[i].hand.push(deck.pop()); } } }
 
 function removePlayerFromRoom(roomId, socketId){ const r = rooms[roomId]; if(!r) return; r.players = r.players.filter(p => p.socketId !== socketId); if(r.players.length === 0) delete rooms[roomId]; }
+// Helper: advance to next active player
+function nextTurn(room) {
+  const len = room.players.length;
+  if(room.players.every(p => p.finished)) return; // no one left
+  let idx = room.turnIndex;
+  for(let i=0; i<len; i++) {
+    idx = (idx + 1) % len;
+    if(!room.players[idx].finished) break;
+  }
+  room.turnIndex = idx;
+}
+
+// Helper: check if only one active player remains
+function checkLastPlayer(room, roomId) {
+  const active = room.players.filter(p => !p.finished);
+  if(active.length === 1) {
+    const loser = active[0];
+    io.to(roomId).emit('game_over', { loserId: loser.id, loserName: loser.name, message: 'YOU WERE THE LEAST 7ACHWEJI' });
+    room.started = false;
+  }
+}
 
 function resolveCall(room, callerIndex, claimedIndex) {
   const last = room.lastClaim;
@@ -104,22 +125,53 @@ io.on('connection', socket => {
   });
 
   socket.on('play_cards', ({ roomId, playerId, cardIds, claim }) => {
-    const r = rooms[roomId]; if(!r || !r.started) return; const idx = r.players.findIndex(p => p.id === playerId); if(idx !== r.turnIndex) return; const player = r.players[idx]; const played = [];
-    for(const cid of cardIds){ const i = player.hand.findIndex(c => c.id === cid); if(i !== -1) played.push(player.hand.splice(i,1)[0]); }
-    r.pile = r.pile.concat(played);
-    r.lastClaim = { playerId, claimText: claim.claimText || `${played.length} x ${claim.rank||'?'}`, count: played.length, rank: claim.rank || null };
-    r.turnIndex = (r.turnIndex + 1) % r.players.length;
-    broadcastRoomState(roomId);
-  });
+  const r = rooms[roomId]; 
+  if(!r || !r.started) return; 
+
+  const idx = r.players.findIndex(p => p.id === playerId); 
+  if(idx !== r.turnIndex) return; 
+
+  const player = r.players[idx]; 
+  const played = [];
+
+  for(const cid of cardIds){ 
+    const i = player.hand.findIndex(c => c.id === cid); 
+    if(i !== -1) played.push(player.hand.splice(i,1)[0]); 
+  }
+
+  r.pile = r.pile.concat(played);
+  r.lastClaim = { playerId, claimText: claim.claimText || `${played.length} x ${claim.rank||'?'}`, count: played.length, rank: claim.rank || null };
+
+  // Mark player as finished if hand is empty
+  if(player.hand.length === 0) player.finished = true;
+
+  nextTurn(r);
+  broadcastRoomState(roomId);
+  checkLastPlayer(r, roomId);
+});
+
 
   socket.on('call_bluff', ({ roomId, callerId, claimedPlayerId }, cb) => {
-    const r = rooms[roomId]; if(!r || !r.started || !r.lastClaim) return cb && cb({ ok: false, error: 'Nothing to call' });
-    const callerIdx = r.players.findIndex(p => p.id === callerId); const claimedIdx = r.players.findIndex(p => p.id === claimedPlayerId);
-    if(callerIdx === -1 || claimedIdx === -1) return cb && cb({ ok: false, error: 'Invalid players' });
-    const res = resolveCall(r, callerIdx, claimedIdx);
-    broadcastRoomState(roomId);
-    cb && cb({ ok: true, result: res });
-  });
+  const r = rooms[roomId]; 
+  if(!r || !r.started || !r.lastClaim) return cb && cb({ ok: false, error: 'Nothing to call' });
+
+  const callerIdx = r.players.findIndex(p => p.id === callerId); 
+  const claimedIdx = r.players.findIndex(p => p.id === claimedPlayerId);
+  if(callerIdx === -1 || claimedIdx === -1) return cb && cb({ ok: false, error: 'Invalid players' });
+
+  const res = resolveCall(r, callerIdx, claimedIdx);
+
+  // After picking cards, mark as not finished if hand > 0
+  if(r.players[claimedIdx].hand.length > 0) r.players[claimedIdx].finished = false;
+  if(r.players[callerIdx].hand.length > 0) r.players[callerIdx].finished = false;
+
+  nextTurn(r);
+  broadcastRoomState(roomId);
+  checkLastPlayer(r, roomId);
+
+  cb && cb({ ok: true, result: res });
+});
+
 
   socket.on('leave_room', ({ roomId }) => { removePlayerFromRoom(roomId, socket.id); socket.leave(roomId); if(rooms[roomId]) broadcastRoomState(roomId); });
 
