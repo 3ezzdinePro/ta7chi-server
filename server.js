@@ -40,9 +40,34 @@ function dealCards(room){ const deck = shuffle(makeDeck()); const count = room.p
 
 function removePlayerFromRoom(roomId, socketId){ const r = rooms[roomId]; if(!r) return; r.players = r.players.filter(p => p.socketId !== socketId); if(r.players.length === 0) delete rooms[roomId]; }
 
-function resolveCall(room, callerIndex, claimedIndex){ const last = room.lastClaim; if(!last) return null; const count = last.count || 0; const revealed = room.pile.slice(-count); const liar = revealed.some(c => last.rank ? (c.rank !== last.rank) : false);
-  if(liar){ room.players[claimedIndex].hand = room.players[claimedIndex].hand.concat(room.pile); room.pile = []; room.lastClaim = null; room.turnIndex = claimedIndex; return { result: 'liar', who: room.players[claimedIndex].id, picked: room.players[claimedIndex].hand.length }; } else { room.players[callerIndex].hand = room.players[callerIndex].hand.concat(room.pile); room.pile = []; room.lastClaim = null; room.turnIndex = callerIndex; return { result: 'wrong', who: room.players[callerIndex].id, picked: room.players[callerIndex].hand.length }; }
+function resolveCall(room, callerIndex, claimedIndex) {
+  const last = room.lastClaim;
+  if (!last) return null;
+
+  const count = last.count || 0;
+  // Only the cards involved in the last claim
+  const revealed = room.pile.slice(-count);
+
+  // Check if bluff
+  const liar = revealed.some(c => last.rank ? (c.rank !== last.rank) : false);
+
+  if (liar) {
+    // Claimed player lied → they pick up only last claim cards
+    room.players[claimedIndex].hand = room.players[claimedIndex].hand.concat(revealed);
+    room.pile.splice(-count, count); // remove only these cards
+    room.lastClaim = null;
+    room.turnIndex = claimedIndex;
+    return { result: 'liar', who: room.players[claimedIndex].id, picked: revealed.length };
+  } else {
+    // Caller was wrong → they pick up only last claim cards
+    room.players[callerIndex].hand = room.players[callerIndex].hand.concat(revealed);
+    room.pile.splice(-count, count); // remove only these cards
+    room.lastClaim = null;
+    room.turnIndex = callerIndex;
+    return { result: 'wrong', who: room.players[callerIndex].id, picked: revealed.length };
+  }
 }
+
 
 io.on('connection', socket => {
   socket.on('create_room', ({ roomId, name }, cb) => {
