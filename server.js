@@ -145,9 +145,9 @@ io.on('connection', socket => {
   // Mark player as finished if hand is empty
   if(player.hand.length === 0) player.finished = true;
 
-  nextTurn(r);
+  nextTurn(r, roomId);
   broadcastRoomState(roomId);
-  checkLastPlayer(r, roomId);
+
 });
 
 
@@ -165,9 +165,9 @@ io.on('connection', socket => {
   if(r.players[claimedIdx].hand.length > 0) r.players[claimedIdx].finished = false;
   if(r.players[callerIdx].hand.length > 0) r.players[callerIdx].finished = false;
 
-  nextTurn(r);
+  nextTurn(r, roomId);
   broadcastRoomState(roomId);
-  checkLastPlayer(r, roomId);
+  
 
   cb && cb({ ok: true, result: res });
 });
