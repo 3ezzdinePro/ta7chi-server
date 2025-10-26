@@ -56,14 +56,22 @@ io.on('connection', socket => {
   });
 
   socket.on('join_room', ({ roomId, name }, cb) => {
-    const r = rooms[roomId]; if (!r) return cb && cb({ ok: false, error: 'No such room' });
+    const r = rooms[roomId]; 
+    if (!r) return cb && cb({ ok: false, error: 'No such room' });
     if (r.started) return cb && cb({ ok: false, error: 'Game already started' });
+
+    // Prevent the same socket from joining twice
+    if (r.players.find(p => p.socketId === socket.id)) {
+        return cb && cb({ ok: false, error: 'Already joined' });
+    }
+
     const player = { id: 'p_' + socket.id.slice(0,6), socketId: socket.id, name: name || 'Guest', hand: [] };
     r.players.push(player);
     socket.join(roomId);
     broadcastRoomState(roomId);
     cb && cb({ ok: true, roomId, playerId: player.id });
-  });
+});
+
 
   socket.on('start_game', ({ roomId }, cb) => {
     const r = rooms[roomId]; if(!r) return cb && cb({ ok: false, error: 'No such room' }); if(r.started) return cb && cb({ ok: false, error: 'Already started' });
